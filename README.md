@@ -1,24 +1,21 @@
 # Polars: A Practical Introduction to Fast DataFrames in Python
 
-I have been analyzing data in Python for more than 10 years. Early on, I wrote a lot of custom Python functions for data
-processing. That approach was flexible and much easier to develop than lower-level languages such as Java or C++, but it
-was also easy to get wrong. As datasets grew larger, performance and memory usage became real concerns, especially when
-working with millions of rows and many columns. Even routine operations such as sorting, grouping, deduplication, joins,
-and window calculations could take a lot of code and careful testing.
+I have been analyzing data in Python for more than 10 years. In the beginning, I wrote a lot of custom Python functions for data processing. That approach was flexible and much easier to develop than lower-level languages such as Java or C++, but it was also easy to make mistakes. As datasets grew larger, performance and memory usage became real concerns, especially when working with millions of rows and many columns. Even routine operations such as sorting, grouping,deduplication, joins, and window calculations would take a lot of code and careful testing.
 
-Later, I started using dataframe libraries such as pandas and PySpark. They made many tasks easier, but each came with
+Later, I started using data frame libraries such as Pandas and PySpark. They made many tasks easier, but each came with
 tradeoffs. In my experience, pandas is productive for small to medium-sized workloads, but large datasets can quickly put
 pressure on memory, and it does not generally take advantage of multiple CPU cores for many operations. PySpark is very
-powerful for distributed data processing, but it also brings the complexity of a Spark-based environment, which can feel
-heavy for local or moderate-scale workflows.
+powerful for distributed data processing, but it also brings the complexity of the need for a Spark-based environment which can feel heavy for local or moderate-scale workflows. PySpark also has a great start-up overhead making it a very bad choice for small to medium datasets. It is a good tool solely for big data processing.
 
 More recently, I started exploring Polars, a newer dataframe library written in Rust. Polars is designed for high
 performance, supports a lazy execution model through `LazyFrame`, and can parallelize many operations. That combination
 makes it a strong option for building data transformation pipelines that are both expressive and efficient.
 
-So far, I have found Polars to be a very useful library both for ad-hoc data exploration and analysis, and for building critical data APIs and pipelines. I have been impressed by it and wanted to share that journey here.
+So far, I have found Polars to be a very useful library both for ad-hoc data exploration and analysis, and for building critical data APIs and pipelines. I have been impressed by it and wanted to share some of that experience.
 
-In this article, I will walk through some basic features of Polars using the NYC TLC Trip Record Data, which is publicly available at [the official TLC Trip Record Data page](https://www.nyc.gov/site/tlc/about/tlc-trip-record-data.page). While I will share code snippets directly in the article for clarity, the entire codebase is available on [GitHub](https://github.com/rupendrab/polars_exploration/tree/data_analysis_initial).
+In this article, I will walk through some basic features of Polars using the NYC TLC Trip Record Data, which is publicly available at [the official TLC Trip Record Data page](https://www.nyc.gov/site/tlc/about/tlc-trip-record-data.page). While I will share code snippets directly in the article for clarity, the entire codebase is available on [GitHub](https://github.com/rupendrab/polars_exploration/tree/data_analysis_initial). Please use the branch `data_analysis_initial` which is fully tailored to this article.
+
+I will go through a sequence of practical steps using this dataset as a live example, with the goal of demonstrating some of the most basic but essential features of Polars. The article is somewhat long, but I hope the examples make the ideas easy to follow and leave you ready to try Polars in your next Python project.
 
 ## 1. Download the data
 
@@ -91,7 +88,7 @@ If the source file contains 50 columns but only 2 are needed, Polars can avoid r
 
 Polars analyzes the entire query plan before execution and can reorder or combine operations to improve performance.
 
-### Streaming Execution
+### Lazy Execution
 
 Some queries can be executed with Polars' streaming engine, which processes data in chunks and can reduce memory pressure for large workloads.
 
@@ -118,7 +115,7 @@ The query executes only when an action such as the following is called:
 For formats such as Parquet, this can significantly reduce both memory usage and execution time because Polars can often read only the columns and row groups needed for the final result.
 
 
-With that, let's explore the data using Polars DataFrames.
+With that background in place, we can now explore the data with Polars DataFrames.
 
 Start a Jupyter notebook by running `jupyter lab`, then create a new notebook in the `notebooks/` directory. The relative paths below assume the notebook is running from there.
 
@@ -159,7 +156,7 @@ These two monthly files contain more than 7 million records, but `scan_parquet()
 
 ## 4. Exploring the schema
 
-You would have noticed that Polars has also picked up the schema embedded in the Parquet file. For other file types such as CSV, Polars can infer the schema from sampled data. We can inspect the schema using `collect_schema()` for scanned DataFrames, or the `schema` property for in-memory DataFrames.
+Polars also reads the schema embedded in the Parquet file, which makes it easy to inspect the available columns and data types before running a full query. For other file types such as CSV, Polars can infer the schema from sampled data. We can inspect the schema using `collect_schema()` for scanned DataFrames, or the `schema` property for in-memory DataFrames.
 
 Let's use these functions to see if the yellow taxi and the green taxi datasets are compatible, i.e., do they have the same columns or are they completely different?
 
@@ -432,11 +429,10 @@ There are other nuances of the join syntax, but we will leave those for now and 
 The pickup location and dropoff locations are indicated by columns `PULocationID` and `DOLocationID` respectively in the dataframe. In order to get the actual name corresponding to these IDs, we will need to use a location reference dataset that we have downloaded previously. The below is a quick function to read the dataset.
 
 ```python
-def get_location_lookup_data() -> pl.DataFrame:
+def get_location_lookup_data() -> pl.LazyFrame:
     return pl.scan_csv("../data/taxi_zone_lookup.csv")
 
-## Explore the data
-
+# Explore the data
 (
     get_location_lookup_data()
     .head(5)
@@ -448,7 +444,7 @@ The data preview shows the structure and the first 5 records as below.
 
 <img src="images/Location_Preview.png" width="500">
 
-Using this location dataset and our primary taxirides datasets, we can generate a rides by pickup and dropoff location like below.
+Using this location dataset and our primary taxi rides datasets, we can generate a rides by pickup and dropoff location like below.
 
 ```python
 df_rides_by_pp = (
@@ -501,7 +497,7 @@ The following are worth noticing:
 2. We use the "Borough" column as the location. The first join gets the "Borough" column for the pickup location as is because there is no "Borough" column in the left dataframe. When we perform the second join for the dropoff location, there is already a "Borough" column (indicating the pickup location), so polars renames that column to "Borough_right". We use the `.rename()` function to rename these columns to "Pick-Up" and "Drop-Off" respectively.
 3. The `group_by()` function can accept multiple column names.
 4. We create the count of rides and the percentage of rides just as we did in the rides by hour example.
-6. We use the `sort()` function to sort the result in descending order of the ride percentage.
+5. We use the `sort()` function to sort the result in descending order of the ride percentage.
 
 The output should look like below:
 
